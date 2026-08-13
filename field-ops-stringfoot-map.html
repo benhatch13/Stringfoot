@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Field Ops | NYC — Stringfoot case map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css" />
+<link rel="preconnect" href="https://fonts.gstatic.com">
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14171A;
+    --panel:#1D2125;
+    --panel-2:#242830;
+    --border:#2E343B;
+    --text:#ECEAE4;
+    --text-muted:#9AA0A6;
+    --unresolved:#FF5A36;
+    --resolved:#4CAF7D;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;}
+  #app{display:flex;flex-direction:column;height:100vh;}
+
+  header{
+    padding:18px 22px 14px;
+    border-bottom:1px solid var(--border);
+    background:var(--panel);
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:.14em;
+    color:var(--unresolved);
+    text-transform:uppercase;
+    margin:0 0 4px;
+  }
+  h1{
+    font-family:'Oswald',sans-serif;
+    font-weight:600;
+    letter-spacing:.02em;
+    text-transform:uppercase;
+    font-size:22px;
+    margin:0;
+    color:var(--text);
+  }
+  .subtitle{
+    font-size:13px;
+    color:var(--text-muted);
+    margin:4px 0 0;
+  }
+
+  #controls{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    align-items:center;
+    padding:12px 22px;
+    background:var(--panel);
+    border-bottom:1px solid var(--border);
+  }
+  #csv-url{
+    flex:1;
+    min-width:220px;
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:8px 10px;
+    border-radius:4px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+  }
+  button{
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size:12px;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+    border:1px solid var(--border);
+    background:var(--panel-2);
+    color:var(--text);
+    padding:9px 16px;
+    border-radius:4px;
+    cursor:pointer;
+  }
+  button:hover{border-color:var(--unresolved);}
+  button:disabled{opacity:.5;cursor:default;}
+  button.primary{background:var(--unresolved);border-color:var(--unresolved);color:#2A0F06;}
+
+  #status-line{
+    padding:0 22px 10px;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-muted);
+    background:var(--panel);
+    border-bottom:1px solid var(--border);
+    min-height:14px;
+  }
+
+  #stats{
+    display:flex;
+    background:var(--panel);
+    border-bottom:1px solid var(--border);
+  }
+  .stat{
+    flex:1;
+    padding:14px 16px;
+    border-right:1px solid var(--border);
+    cursor:pointer;
+    user-select:none;
+    transition:background .1s;
+  }
+  .stat:last-child{border-right:none;}
+  .stat.off{opacity:.35;}
+  .stat:hover{background:var(--panel-2);}
+  .stat-count{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:26px;
+    font-weight:500;
+  }
+  .stat-label{
+    font-size:11px;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    margin-top:2px;
+  }
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px;}
+
+  #map{flex:1;min-height:0;}
+
+  .leaflet-popup-content-wrapper{
+    background:var(--panel);
+    color:var(--text);
+    border-radius:6px;
+    border:1px solid var(--border);
+  }
+  .leaflet-popup-tip{background:var(--panel);}
+  .popup-status{
+    display:inline-block;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    letter-spacing:.05em;
+    text-transform:uppercase;
+    padding:2px 7px;
+    border-radius:3px;
+    margin-bottom:6px;
+  }
+  .popup-row{font-size:12px;margin:3px 0;color:var(--text-muted);}
+  .popup-row b{color:var(--text);font-weight:500;}
+  .popup-details{font-size:12px;margin-top:6px;color:var(--text);line-height:1.4;}
+
+  .case-marker{
+    border-radius:50%;
+    border:2px solid #14171A;
+  }
+  .cluster-badge{
+    background:var(--panel);
+    border:2px solid var(--unresolved);
+    border-radius:50%;
+    color:var(--text);
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:500;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <p class="eyebrow">Field Ops | NYC</p>
+    <h1>Stringfoot case map</h1>
+    <p class="subtitle">Live case cluster view, pulled from the published case sheet.</p>
+  </header>
+
+  <div id="controls">
+    <input id="csv-url" type="text" value="https://docs.google.com/spreadsheets/d/e/2PACX-1vQbo_w7gN63KwYn4GCTKNTpQN__9oxCiFJBAqnjz4GWKfVHJWFR0SK6S9hXpRLDPfGBv4GTxaCC1YlU/pub?gid=895145994&single=true&output=csv" />
+    <button id="load-btn" class="primary">Reload data</button>
+  </div>
+
+  <div id="status-line">Loading…</div>
+
+  <div id="stats">
+    <div class="stat" data-status="unresolved"><div class="stat-count" id="count-unresolved">0</div><div class="stat-label"><span class="dot" style="background:var(--unresolved)"></span>Unresolved</div></div>
+    <div class="stat" data-status="resolved"><div class="stat-count" id="count-resolved">0</div><div class="stat-label"><span class="dot" style="background:var(--resolved)"></span>Resolved</div></div>
+  </div>
+
+  <div id="map"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script>
+const STATUS_COLORS = { unresolved:'#FF5A36', resolved:'#4CAF7D' };
+const STATUS_LABELS = { unresolved:'Unresolved', resolved:'Resolved' };
+const activeStatuses = new Set(['unresolved','resolved']);
+
+let map, clusterGroup;
+let currentRows = [];
+
+function initMap(){
+  map = L.map('map', { zoomControl: true }).setView([40.7484, -73.9857], 12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    subdomains: 'abcd',
+    maxZoom: 19
+  }).addTo(map);
+  clusterGroup = L.markerClusterGroup({
+    maxClusterRadius: 55,
+    iconCreateFunction: makeClusterIcon
+  });
+  map.addLayer(clusterGroup);
+}
+
+function makeClusterIcon(cluster){
+  const markers = cluster.getAllChildMarkers();
+  const counts = { unresolved:0, resolved:0 };
+  markers.forEach(m => counts[m.options.statusKey]++);
+  const dominant = counts.unresolved >= counts.resolved ? 'unresolved' : 'resolved';
+  const n = markers.length;
+  const size = n < 10 ? 34 : n < 25 ? 42 : 52;
+  return L.divIcon({
+    html: `<div class="cluster-badge" style="width:${size}px;height:${size}px;border-color:${STATUS_COLORS[dominant]};font-size:${n<25?13:15}px;">${n}</div>`,
+    className: '',
+    iconSize: [size, size]
+  });
+}
+
+function makeMarker(row){
+  const color = STATUS_COLORS[row.statusKey];
+  const icon = L.divIcon({
+    className: '',
+    html: `<div class="case-marker" style="width:16px;height:16px;background:${color};"></div>`,
+    iconSize: [16,16],
+    iconAnchor: [8,8]
+  });
+  const marker = L.marker([row.lat, row.lng], { icon, statusKey: row.statusKey });
+  marker.bindPopup(`
+    <span class="popup-status" style="background:${color}22;color:${color};border:1px solid ${color}66;">${STATUS_LABELS[row.statusKey]}</span>
+    <div class="popup-row"><b>Location:</b> ${escapeHtml(row.location || '—')}</div>
+    <div class="popup-row"><b>Reported:</b> ${escapeHtml(row.date || '—')}</div>
+    <div class="popup-row"><b>Status:</b> ${escapeHtml(row.status || '—')}</div>
+    ${row.resolvedDate ? `<div class="popup-row"><b>Resolved:</b> ${escapeHtml(row.resolvedDate)}</div>` : ''}
+    ${row.outcome ? `<div class="popup-row"><b>Outcome:</b> ${escapeHtml(row.outcome)}</div>` : ''}
+    ${row.details ? `<div class="popup-details">${escapeHtml(row.details)}</div>` : ''}
+  `);
+  return marker;
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function setStatus(msg){
+  document.getElementById('status-line').textContent = msg;
+}
+
+function renderMarkers(){
+  clusterGroup.clearLayers();
+  const counts = { unresolved:0, resolved:0 };
+  currentRows.forEach(row => {
+    if (row.lat == null || row.lng == null) return;
+    counts[row.statusKey]++;
+    if (activeStatuses.has(row.statusKey)) clusterGroup.addLayer(makeMarker(row));
+  });
+  document.getElementById('count-unresolved').textContent = counts.unresolved;
+  document.getElementById('count-resolved').textContent = counts.resolved;
+  const placed = currentRows.filter(r => r.lat != null);
+  if (placed.length > 0){
+    const bounds = L.latLngBounds(placed.map(r => [r.lat, r.lng]));
+    map.fitBounds(bounds.pad(0.15));
+  }
+}
+
+function classifyStatus(status, resolvedDate){
+  if (resolvedDate && resolvedDate.trim()) return 'resolved';
+  if (status && /resolved|closed|rescued/i.test(status)) return 'resolved';
+  return 'unresolved';
+}
+
+function parseLatLng(raw){
+  if (!raw) return null;
+  const m = String(raw).match(/(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/);
+  if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+  return null;
+}
+
+async function geocode(address){
+  const cacheKey = 'geocode:' + address.trim().toLowerCase();
+  try {
+    const cached = await window.storage.get(cacheKey, false);
+    if (cached && cached.value) return JSON.parse(cached.value);
+  } catch (e) {}
+  const query = /nyc|new york/i.test(address) ? address : address + ', New York, NY';
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query);
+  try {
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const data = await res.json();
+    if (data && data[0]){
+      const result = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+      try { await window.storage.set(cacheKey, JSON.stringify(result), false); } catch (e) {}
+      return result;
+    }
+  } catch (e) {}
+  return null;
+}
+
+async function fetchCsvText(url){
+  try {
+    const res = await fetch(url);
+    if (res.ok) return await res.text();
+  } catch (e) {}
+  const proxied = 'https://corsproxy.io/?url=' + encodeURIComponent(url);
+  try {
+    const res2 = await fetch(proxied);
+    if (res2.ok) return await res2.text();
+  } catch (e) {}
+  const proxied2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
+  const res3 = await fetch(proxied2);
+  if (!res3.ok) throw new Error('Could not fetch that URL, even via a CORS proxy. Double check the link opens a CSV directly in your browser.');
+  return await res3.text();
+}
+
+function findCol(fields, name){
+  return fields.find(f => f.trim().toLowerCase() === name.toLowerCase())
+    || fields.find(f => f.trim().toLowerCase().includes(name.toLowerCase()));
+}
+
+async function loadFromCsv(url){
+  setStatus('Fetching sheet…');
+  document.getElementById('load-btn').disabled = true;
+  try {
+    const text = await fetchCsvText(url);
+    const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+    if (!parsed.data.length) throw new Error('No rows found in the CSV.');
+    const fields = parsed.meta.fields;
+    const dateCol = findCol(fields, 'Date');
+    const locCol = findCol(fields, 'Location');
+    const detailCol = findCol(fields, 'Details');
+    const statusCol = findCol(fields, 'Status');
+    const resolvedDateCol = findCol(fields, 'Resolved Date');
+    const outcomeCol = findCol(fields, 'Outcome');
+
+    if (!locCol) throw new Error('Could not find a Location column in that sheet.');
+
+    const rows = parsed.data.map(r => ({
+      date: dateCol ? r[dateCol] : '',
+      location: r[locCol],
+      details: detailCol ? r[detailCol] : '',
+      status: statusCol ? r[statusCol] : '',
+      resolvedDate: resolvedDateCol ? r[resolvedDateCol] : '',
+      outcome: outcomeCol ? r[outcomeCol] : '',
+      lat: null, lng: null
+    })).filter(r => r.location && r.location.trim());
+
+    setStatus('Placing ' + rows.length + ' cases on the map…');
+
+    for (const row of rows){
+      row.statusKey = classifyStatus(row.status, row.resolvedDate);
+      const direct = parseLatLng(row.location);
+      if (direct){
+        row.lat = direct.lat; row.lng = direct.lng;
+      } else {
+        const g = await geocode(row.location);
+        if (g){ row.lat = g.lat; row.lng = g.lng; }
+        await new Promise(r => setTimeout(r, 1100));
+        setStatus('Geocoding addresses… ' + (rows.indexOf(row)+1) + ' / ' + rows.length);
+      }
+    }
+
+    currentRows = rows;
+    renderMarkers();
+    const placed = rows.filter(r => r.lat != null).length;
+    setStatus('Loaded ' + placed + ' of ' + rows.length + ' cases.');
+  } catch (e) {
+    setStatus('Error: ' + e.message);
+  } finally {
+    document.getElementById('load-btn').disabled = false;
+  }
+}
+
+document.getElementById('load-btn').addEventListener('click', () => {
+  const url = document.getElementById('csv-url').value.trim();
+  if (!url){ setStatus('Paste a published CSV link first.'); return; }
+  loadFromCsv(url);
+});
+document.querySelectorAll('.stat').forEach(el => {
+  el.addEventListener('click', () => {
+    const s = el.dataset.status;
+    if (activeStatuses.has(s)){ activeStatuses.delete(s); el.classList.add('off'); }
+    else { activeStatuses.add(s); el.classList.remove('off'); }
+    renderMarkers();
+  });
+});
+
+initMap();
+loadFromCsv(document.getElementById('csv-url').value.trim());
+</script>
+</body>
+</html>
