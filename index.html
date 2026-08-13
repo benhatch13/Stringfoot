@@ -310,19 +310,9 @@ async function geocode(address){
 }
 
 async function fetchCsvText(url){
-  try {
-    const res = await fetch(url);
-    if (res.ok) return await res.text();
-  } catch (e) {}
-  const proxied = 'https://corsproxy.io/?url=' + encodeURIComponent(url);
-  try {
-    const res2 = await fetch(proxied);
-    if (res2.ok) return await res2.text();
-  } catch (e) {}
-  const proxied2 = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url);
-  const res3 = await fetch(proxied2);
-  if (!res3.ok) throw new Error('Could not fetch that URL, even via a CORS proxy. Double check the link opens a CSV directly in your browser.');
-  return await res3.text();
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Could not fetch that URL (HTTP ' + res.status + '). Make sure the sheet is published to the web as CSV.');
+  return await res.text();
 }
 
 function findCol(fields, name){
