@@ -24,39 +24,34 @@
   #app{display:flex;flex-direction:column;height:100vh;}
 
   header{
-    padding:18px 22px 14px;
+    padding:10px 16px 8px;
     border-bottom:1px solid var(--border);
     background:var(--panel);
   }
   .eyebrow{
     font-family:'IBM Plex Mono',monospace;
-    font-size:11px;
-    letter-spacing:.14em;
+    font-size:10px;
+    letter-spacing:.12em;
     color:var(--unresolved);
     text-transform:uppercase;
-    margin:0 0 4px;
+    margin:0 0 2px;
   }
   h1{
     font-family:'Oswald',sans-serif;
     font-weight:600;
     letter-spacing:.02em;
     text-transform:uppercase;
-    font-size:22px;
+    font-size:17px;
     margin:0;
     color:var(--text);
-  }
-  .subtitle{
-    font-size:13px;
-    color:var(--text-muted);
-    margin:4px 0 0;
   }
 
   #controls{
     display:flex;
     flex-wrap:wrap;
-    gap:10px;
+    gap:8px;
     align-items:center;
-    padding:12px 22px;
+    padding:8px 16px;
     background:var(--panel);
     border-bottom:1px solid var(--border);
   }
@@ -89,7 +84,7 @@
   button.primary{background:var(--unresolved);border-color:var(--unresolved);color:#2A0F06;}
 
   #status-line{
-    padding:0 22px 10px;
+    padding:0 16px 8px;
     font-family:'IBM Plex Mono',monospace;
     font-size:12px;
     color:var(--text-muted);
@@ -105,7 +100,7 @@
   }
   .stat{
     flex:1;
-    padding:14px 16px;
+    padding:8px 16px;
     border-right:1px solid var(--border);
     cursor:pointer;
     user-select:none;
@@ -116,7 +111,7 @@
   .stat:hover{background:var(--panel-2);}
   .stat-count{
     font-family:'IBM Plex Mono',monospace;
-    font-size:26px;
+    font-size:20px;
     font-weight:500;
   }
   .stat-label{
@@ -173,12 +168,12 @@
   <header>
     <p class="eyebrow">Field Ops | NYC</p>
     <h1>Stringfoot case map</h1>
-    <p class="subtitle">Live case cluster view, pulled from the published case sheet.</p>
   </header>
 
   <div id="controls">
     <input id="csv-url" type="text" value="https://docs.google.com/spreadsheets/d/e/2PACX-1vQbo_w7gN63KwYn4GCTKNTpQN__9oxCiFJBAqnjz4GWKfVHJWFR0SK6S9hXpRLDPfGBv4GTxaCC1YlU/pub?gid=895145994&single=true&output=csv" />
     <button id="load-btn" class="primary">Reload data</button>
+    <button id="clear-cache-btn">Clear geocode cache</button>
   </div>
 
   <div id="status-line">Loading…</div>
@@ -289,12 +284,22 @@ function parseLatLng(raw){
   return null;
 }
 
-async function geocode(address){
-  const cacheKey = 'geocode:' + address.trim().toLowerCase();
+function getCachedGeocode(address){
   try {
-    const cached = await window.storage.get(cacheKey, false);
-    if (cached && cached.value) return JSON.parse(cached.value);
+    const raw = localStorage.getItem('geocode:' + address.trim().toLowerCase());
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function setCachedGeocode(address, result){
+  try {
+    localStorage.setItem('geocode:' + address.trim().toLowerCase(), JSON.stringify(result));
   } catch (e) {}
+}
+
+async function geocode(address){
+  const cached = getCachedGeocode(address);
+  if (cached) return { result: cached, fromCache: true };
   const query = /nyc|new york/i.test(address) ? address : address + ', New York, NY';
   const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(query);
   try {
@@ -302,11 +307,11 @@ async function geocode(address){
     const data = await res.json();
     if (data && data[0]){
       const result = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-      try { await window.storage.set(cacheKey, JSON.stringify(result), false); } catch (e) {}
-      return result;
+      setCachedGeocode(address, result);
+      return { result, fromCache: false };
     }
   } catch (e) {}
-  return null;
+  return { result: null, fromCache: false };
 }
 
 async function fetchCsvText(url){
@@ -349,16 +354,22 @@ async function loadFromCsv(url){
 
     setStatus('Placing ' + rows.length + ' cases on the map…');
 
+    let cacheHits = 0, freshLookups = 0;
     for (const row of rows){
       row.statusKey = classifyStatus(row.status, row.resolvedDate);
       const direct = parseLatLng(row.location);
       if (direct){
         row.lat = direct.lat; row.lng = direct.lng;
       } else {
-        const g = await geocode(row.location);
-        if (g){ row.lat = g.lat; row.lng = g.lng; }
-        await new Promise(r => setTimeout(r, 1100));
-        setStatus('Geocoding addresses… ' + (rows.indexOf(row)+1) + ' / ' + rows.length);
+        const { result, fromCache } = await geocode(row.location);
+        if (result){ row.lat = result.lat; row.lng = result.lng; }
+        if (fromCache){
+          cacheHits++;
+        } else {
+          freshLookups++;
+          await new Promise(r => setTimeout(r, 1100));
+        }
+        setStatus('Placing cases… ' + (rows.indexOf(row)+1) + ' / ' + rows.length + ' (' + cacheHits + ' from cache, ' + freshLookups + ' looked up)');
       }
     }
 
@@ -377,6 +388,10 @@ document.getElementById('load-btn').addEventListener('click', () => {
   const url = document.getElementById('csv-url').value.trim();
   if (!url){ setStatus('Paste a published CSV link first.'); return; }
   loadFromCsv(url);
+});
+document.getElementById('clear-cache-btn').addEventListener('click', () => {
+  Object.keys(localStorage).filter(k => k.startsWith('geocode:')).forEach(k => localStorage.removeItem(k));
+  setStatus('Geocode cache cleared. Click Reload data to re-fetch fresh coordinates.');
 });
 document.querySelectorAll('.stat').forEach(el => {
   el.addEventListener('click', () => {
